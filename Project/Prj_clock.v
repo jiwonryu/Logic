@@ -144,6 +144,39 @@ always @(posedge clk or negedge rst_n) begin
 end
 
 endmodule
+//	--------------------------------------------------
+//	WORK SONG
+//	--------------------------------------------------
+module	nco_worksong(	      
+			o_gen_clk,
+			i_nco_num_worksong,
+			clk,
+			rst_n);
+
+output			o_gen_clk	;	// 1Hz CLK
+
+input	[31:0]		i_nco_num_worksong	;
+input			clk		;	// 50Mhz CLK
+input			rst_n		;
+
+reg	[31:0]		cnt_worksong	;
+reg			o_gen_clk	;
+
+always @(posedge clk or negedge rst_n) begin
+	if(rst_n == 1'b0) begin
+		cnt_worksong <= 32'd0;
+		o_gen_clk	<= 1'd0	;
+	end else begin
+		if(cnt_worksong>= i_nco_num_worksong/9-1) begin
+			cnt_worksong <= 32'd0;
+			o_gen_clk	     <= ~o_gen_clk;
+		end else begin
+			cnt_worksong <= cnt_worksong + 1'b1;
+		end
+	end
+end
+
+endmodule
 
 //	--------------------------------------------------
 //	Flexible Numerical Display Decoder
@@ -653,6 +686,7 @@ module	controller(
 		o_timer_hour_clk,
 		o_timer_en,
 		o_timer_buzz,
+		o_worksong_en,
 		o_wt_change_position,
 		i_max_hit_sec,
 		i_max_hit_min,
@@ -674,6 +708,7 @@ module	controller(
 		i_sw5, // for stopwatch 'reset'
 		i_sw6, // for change worldtime
 		i_sw7,
+		i_sw9,
 		clk,
 		rst_n);
 
@@ -704,6 +739,7 @@ output	[1:0]	o_timer_en		;
 output		o_timer_buzz		;
 
 output	[2:0]	o_wt_change_position	;// wt
+output		o_worksong_en		;
 
 input		i_max_hit_sec		;
 input		i_max_hit_min		;
@@ -726,6 +762,7 @@ input		i_sw4			;
 input 		i_sw5			;
 input		i_sw6			;
 input		i_sw7			;
+input		i_sw9			;
 
 input		clk			;
 input		rst_n			;
@@ -808,6 +845,13 @@ debounce	u7_debounce(
 		.o_sw		( sw7		),
 		.i_sw		( i_sw7		),
 		.clk		( clk_100hz	));
+
+wire		sw9			;
+debounce	u9_debounce(
+		.o_sw		( sw9		),
+		.i_sw		( i_sw9		),
+		.clk		( clk_100hz	));
+		
 
 reg	[2:0]	o_mode			; 
 always @(posedge sw0 or negedge rst_n) begin
@@ -894,6 +938,11 @@ always @(posedge sw7 or negedge rst_n) begin
 		  o_timer_en <= o_timer_en + 1'b1;
 		end
 	end
+end
+
+reg		o_worksong_en		;
+always	@(posedge sw9) begin
+	o_worksong_en <= ~o_worksong_en;
 end
 
 wire		clk_1hz			;
@@ -2387,6 +2436,7 @@ module	buzz(
 		o_buzz,
 		o_alarm,
 		i_buzz_en,
+		i_worksong_en,
 		i_buzz_sharp_en,
 		clk,
 		rst_n);
@@ -2395,21 +2445,24 @@ output		o_buzz		;
 
 input		o_alarm		;
 input		i_buzz_en	;
+input		i_worksong_en	;
 input		i_buzz_sharp_en	;
 input		clk		;
 input		rst_n		;
 
-parameter C5 = 47778   ;
-parameter D = 42566   ;
+parameter C5 = 47778   	;
+parameter D  = 42566   	;	
 parameter D6 = 21283	;
-parameter E = 37922   ;
-parameter F = 35793   ;
-parameter Fsh=33784	;
-parameter G = 31888   ;
-parameter A = 28409   ;
-parameter B = 25310   ;
-parameter C6 = 23889  ;
-parameter O = 1000	;
+parameter E  = 37922   	;
+parameter E6 = 18960	;
+parameter F  = 35793   	;
+parameter Fsh= 33784	;
+parameter G  = 31888   	;
+parameter A  = 28409   	;
+parameter B  = 25310   	;
+parameter C6 = 23889  	;
+parameter O  = 1000	;
+
 
 wire		clk_alarm_beat	;
 nco_alarm		u_alarm_beat(	
@@ -2424,6 +2477,13 @@ nco_sharp		u_sharp_beat(
 			.i_nco_num	( 25000000	),
 			.clk		( clk		),
 			.rst_n		( rst_n		));
+
+wire		clk_worksong_beat;
+nco_worksong	u_worksong_beat(	
+				.o_gen_clk		( clk_worksong_beat ),
+				.i_nco_num_worksong	( 25000000	),
+				.clk			( clk		),
+				.rst_n			( rst_n		));
 
 reg	[6:0]	cnt		;
 always @ (posedge clk_alarm_beat or negedge i_buzz_en ) begin
@@ -2607,6 +2667,104 @@ always @ (*) begin
 	endcase
 end
 
+
+reg	[5:0]	cnt_worksong;
+always @ (posedge clk_worksong_beat or negedge i_worksong_en) begin
+		if(i_worksong_en == 1'b0) begin
+			cnt_worksong <= 6'd0;
+		end else begin
+			if(cnt_worksong >= 6'd60) begin
+				cnt_worksong <= 6'd0;
+			end else begin
+				cnt_worksong <= cnt_worksong + 1'd1;
+			end
+		end
+end
+
+reg	[40:0] 	nco_num_worksong	;
+always @ (*) begin
+	case (cnt_worksong)
+		6'd00: nco_num_worksong = E	;
+		6'd01: nco_num_worksong = A	;
+		6'd02: nco_num_worksong = B	;
+		6'd03: nco_num_worksong = C6	;
+
+		6'd04: nco_num_worksong = C6	;
+		6'd05: nco_num_worksong = B	;
+		6'd06: nco_num_worksong = A	;
+		6'd07: nco_num_worksong = G	;
+
+		6'd08: nco_num_worksong = A	;
+		6'd09: nco_num_worksong = G	;
+		6'd10: nco_num_worksong = E	;
+		6'd11: nco_num_worksong = E	;
+
+
+		6'd12: nco_num_worksong = E	;
+		6'd13: nco_num_worksong = E	;
+		6'd14: nco_num_worksong = E	;
+		6'd15: nco_num_worksong = F	;
+
+		6'd16: nco_num_worksong = G	;
+		6'd17: nco_num_worksong = A	;
+		6'd18: nco_num_worksong = C6	;
+		6'd19: nco_num_worksong = B	;
+
+		6'd20: nco_num_worksong = G	;
+		6'd21: nco_num_worksong = D	;
+		6'd22: nco_num_worksong = E	;
+		6'd23: nco_num_worksong = E	;
+		
+
+		6'd24: nco_num_worksong = E	;
+		6'd25: nco_num_worksong = E	;
+		6'd26: nco_num_worksong = E	;
+		6'd27: nco_num_worksong = E	;
+
+		6'd28: nco_num_worksong = E	;
+		6'd29: nco_num_worksong = E	;
+		6'd30: nco_num_worksong = E	;
+		6'd31: nco_num_worksong = E	;
+
+		6'd32: nco_num_worksong = A	;
+		6'd33: nco_num_worksong = B	;
+		6'd34: nco_num_worksong = C6	;
+		6'd35: nco_num_worksong = C6	;
+
+		6'd36: nco_num_worksong = B	;
+		6'd37: nco_num_worksong = A	;
+
+		6'd38: nco_num_worksong = B	;
+		6'd39: nco_num_worksong = C6	;
+		6'd40: nco_num_worksong = D6	;
+		6'd41: nco_num_worksong = E6	;
+		6'd42: nco_num_worksong = E6	;
+		6'd43: nco_num_worksong = E6	;
+
+		6'd44: nco_num_worksong = E6	;
+		6'd45: nco_num_worksong = E6	;
+		6'd46: nco_num_worksong = F	;
+		6'd47: nco_num_worksong = G	;
+		6'd48: nco_num_worksong = A	;
+		6'd49: nco_num_worksong = C6	;
+		
+		
+		6'd50: nco_num_worksong = B	;
+		6'd51: nco_num_worksong = A	;
+		6'd52: nco_num_worksong = G	;
+		6'd53: nco_num_worksong = A	;
+		6'd54: nco_num_worksong = A	;
+		6'd55: nco_num_worksong = A	;
+		
+		
+		6'd56: nco_num_worksong = A	;
+		6'd57: nco_num_worksong = A	;
+		6'd58: nco_num_worksong = A	;
+		6'd59: nco_num_worksong = A	;
+		6'd60: nco_num_worksong = A	;
+	endcase
+end
+
 wire		buzz		;
 nco		u_nco_buzz(	
 		.o_gen_clk	( buzz		),
@@ -2621,10 +2779,18 @@ nco_sharp	u_nco_sharp(
 		.clk		( clk		),
 		.rst_n		( rst_n		));
 
+wire		worksong	;
+nco_worksong	u_nco_worksong(
+				.o_gen_clk	(worksong),
+				.i_nco_num_worksong	(nco_num_worksong	),
+				.clk		(clk		),
+				.rst_n		(rst_n		));
+
 assign		o_buzz_alarm = buzz & i_buzz_en		;
 assign		o_buzz_sharp = sharp & i_buzz_sharp_en	;
+assign		o_buzz_worksong = worksong & i_worksong_en;
 
-assign		o_buzz = o_buzz_alarm | o_buzz_sharp 	;
+assign		o_buzz = o_buzz_alarm | o_buzz_sharp | o_buzz_worksong	;
 
 endmodule
 
@@ -2633,6 +2799,7 @@ module	top_project(
 		o_seg_dp,
 		o_seg,
 		o_alarm,
+		o_worksong_en,
 		i_sw0,
 		i_sw1,
 		i_sw2,
@@ -2641,6 +2808,7 @@ module	top_project(
 		i_sw5,
 		i_sw6,
 		i_sw7,
+		i_sw9,
 		clk,
 		rst_n);
 
@@ -2648,6 +2816,7 @@ output	[5:0]	o_seg_enb	;
 output		o_seg_dp	;
 output	[6:0]	o_seg		;
 output		o_alarm		;
+output		o_worksong_en	;
 
 input		i_sw0		;
 input		i_sw1		;
@@ -2657,6 +2826,7 @@ input		i_sw4		;
 input		i_sw5		;
 input		i_sw6		;
 input		i_sw7		;
+input		i_sw9		;
 input		clk		;
 input		rst_n		;
 
@@ -2699,6 +2869,7 @@ wire		timer_buzz_en	;
 
 wire		alarm_sharp	;
 wire		alarm_dp	;
+wire		worksong_en	;
 
 controller		u_ctrl(
 			.i_sw0			(i_sw0		),
@@ -2709,6 +2880,7 @@ controller		u_ctrl(
 			.i_sw5			(i_sw5		),
 			.i_sw6			(i_sw6		),
 			.i_sw7			(i_sw7		),
+			.i_sw9			(i_sw9		),
 			.clk			(clk		),
 			.i_max_hit_hour		(controller_5	),
 			.i_max_hit_min		(controller_3	),
@@ -2748,6 +2920,7 @@ controller		u_ctrl(
 			.o_timer_en		(timer_en	),
 			.o_timer_buzz		(timer_buzz_en	),
 			.o_wt_change_position	(wt_change_position),
+			.o_worksong_en		(worksong_en	),
 			.rst_n			(rst_n		));
 
 wire	[6:0]	hrminsec_1	;
@@ -2803,6 +2976,7 @@ hrminsec			u_hrminsec(
 buzz			u_buzz(
 			.clk			(clk			),
 			.i_buzz_en		(alarm	| timer_buzz	),
+			.i_worksong_en 		(worksong_en		),
 			.i_buzz_sharp_en	(alarm_sharp		),
 			.o_buzz			(o_alarm		),
 			.rst_n			(rst_n			));
